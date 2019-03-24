@@ -22,7 +22,7 @@ from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import LSTM
 from keras.layers import Dropout
-from keras.optimizers import RMSprop
+from keras.optimizers import RMSprop, Adam
 #%%
 print('corpus length:', len(text))
 
@@ -68,12 +68,12 @@ if __name__ == '__main__':
                     type=str)
     parser.add_argument("val_metric", help="Validation metric (list of strings)",
                     type=str)
+    parser.add_argument("epochs", help="Number of epochs",
+                    type=int)
+    parser.add_argument("activation", help="Type of activation layer",
+                    type=str)
     args = parser.parse_args()
 
-
-
-print(args)
-print('OK')
 
 def build_rnn(layers=args.layers, neurons=args.neurons, 
               dropout_rate=args.dropout_rate, lrate=args.lrate, 
@@ -84,16 +84,18 @@ def build_rnn(layers=args.layers, neurons=args.neurons,
     print('Building model...')
     model = Sequential()
     model.add(LSTM(neurons, input_shape=in_shape, return_sequences=True))
+    model.add(Dropout(dropout_rate))
     
-    for l in range(1, layers):
+    for l in range(1, layers-1):
         
+        model.add(LSTM(neurons, return_sequences=True))
         model.add(Dropout(dropout_rate))
-        model.add(LSTM(neurons))
-        model.add(Dropout(dropout_rate))
-    
-    model.add(Dense(len(chars), activation='softmax'))
+        
+    model.add(LSTM(neurons, return_sequences=False))
+    model.add(Dropout(dropout_rate))    
+    model.add(Dense(len(chars), activation=args.activation))
 
-    optimizer = RMSprop(lr=lrate)
+    optimizer = Adam(lr=lrate)
     model.compile(loss=loss_metric, metrics=[val_metric],
                       optimizer=optimizer)
     print(model.summary())
@@ -160,9 +162,7 @@ cp_callback = ModelCheckpoint(checkpoint_path,
                               mode='min',
                               verbose=1)
 
-
-from keras.callbacks import TensorBoard
-tb_callback = TensorBoard(log_dir='./logs', 
+tb_callback = TensorBoard(log_dir='../logs', 
                          histogram_freq=0,
                          write_graph=False,
                          write_grads=True,
@@ -173,15 +173,19 @@ tb_callback = TensorBoard(log_dir='./logs',
 
 # Create EarlyStopping Callback
 
-es_callback = EarlyStopping(monitor='loss', patience=2)
+es_callback = EarlyStopping(monitor='loss', patience=4)
 
 #%%
 
 model.fit(x, y,
           batch_size=128,
-          epochs=7,
+          epochs=args.epochs,
           callbacks=[cp_callback, es_callback, print_callback])
 
 #%%
-model_path = '../model/lstm_2_128.hdf5'
+model_path = '../models/lstm_{}_{}_{}_{}_{}_{}_{}.hdf5'.format(args.layers, 
+                             args.neurons, args.dropout_rate, 
+                             args.lrate, args.loss_metric, args.val_metric,
+                             args.epochs)
+
 model.save(model_path)
